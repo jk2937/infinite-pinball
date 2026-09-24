@@ -10,8 +10,8 @@ A browser pinball game with no end, served as one static page (it works on GitHu
 - You can fall back to lower levels. You only lose a ball through the drain on level 1.
 
 ## Controls
-- Left flippers: `←` / `Z` / left Shift, or tap the left half of the screen
-- Right flippers: `→` / `/` / `M` / right Shift, or tap the right half of the screen
+- Left flippers: `←` / `Z` / left Shift / left mouse button, or tap the left half of the screen
+- Right flippers: `→` / `/` / `M` / right Shift / right mouse button, or tap the right half of the screen
 - `Space` nudges the table
 
 ## Run locally

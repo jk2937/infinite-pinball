@@ -19,7 +19,7 @@
 <div id="overlay">
   <h1>INFINITE PINBALL</h1>
   <p id="msg">Every world is different. Break through the blocks to climb higher.</p>
-  <p>Flippers: <span class="k">←</span>/<span class="k">Z</span> left, <span class="k">→</span>/<span class="k">/</span> right, or tap left/right half of the screen.<br><span class="k">Space</span> nudges the table.</p>
+  <p>Flippers: <span class="k">←</span>/<span class="k">Z</span> left, <span class="k">→</span>/<span class="k">/</span> right, left/right mouse button, or tap left/right half of the screen.<br><span class="k">Space</span> nudges the table.</p>
   <p><b>Click, tap or press any key to start</b></p>
 </div>
 <script>
@@ -59,7 +59,8 @@ function newGame(){
 
 function spawnBall(){
   curLevel = 0;
-  ball = {x:190, y:230, vx:0, vy:0, r:BR};
+  const lo = getLevel(0).lower;
+  ball = {x:lo.lpx+15, y:lo.fy+120, vx:0, vy:0, r:BR};
 }
 
 // ---------- level generation ----------
@@ -68,28 +69,47 @@ function getLevel(n){
   const R = mulberry32(seed ^ (n*2654435761));
   const rnd=(a,b)=>a+R()*(b-a);
   const base = n*LH;
-  const lv = {n, base, segs:[], moving:[], flippers:[], bumpers:[], blocks:[], wells:[], hue:(n*47+200)%360};
+  const lv = {n, base, segs:[], polys:[], moving:[], flippers:[], bumpers:[], blocks:[], wells:[], hue:(n*47+200)%360};
 
-  // --- lower flipper zone ---
-  const flen = Math.max(74, 96 - n*2);
-  const lpx = W/2 - 120, rpx = W/2 + 120, fy = base + 110;
-  lv.segs.push({x1:0,y1:base+290,x2:lpx,y2:fy,t:4});
-  lv.segs.push({x1:W,y1:base+290,x2:rpx,y2:fy,t:4});
+  // --- polygons: every wall is a closed, filled shape; its edges are the collision surface ---
+  function addPoly(pts, kick){
+    lv.polys.push({pts, kick});
+    for (let k=0;k<pts.length;k++){
+      const a=pts[k], c=pts[(k+1)%pts.length];
+      lv.segs.push({x1:a[0],y1:a[1],x2:c[0],y2:c[1],t:1,kick});
+    }
+  }
+  const COS=Math.cos(0.5);
+
+  // --- lower ("big") flipper zone: random center, gap, length and height ---
+  const flen = rnd(80,108) - Math.min(n*1.5,18);
+  const lcx = rnd(240,360), lg = rnd(32,42), fy = base + rnd(95,130);
+  const lpx = lcx - lg - flen*COS, rpx = lcx + lg + flen*COS;
+  const gyl = base + rnd(230,320), gyr = base + rnd(230,320);
+  lv.lower = {cx:lcx, lpx, fy};
   lv.flippers.push(makeFlipper(lpx,fy,flen,1), makeFlipper(rpx,fy,flen,-1));
   if (n>0){
     // funnel from the level below: the only way in or out is the gap between the lower flippers
-    const mx = W/2 - 45;
-    lv.segs.push({x1:0,y1:base-80,x2:mx,y2:base+40,t:4},{x1:mx,y1:base+40,x2:lpx,y2:fy,t:4});
-    lv.segs.push({x1:W,y1:base-80,x2:W-mx,y2:base+40,t:4},{x1:W-mx,y1:base+40,x2:rpx,y2:fy,t:4});
+    addPoly([[0,base-80],[lcx-lg-10,base+40],[lpx,fy],[0,gyl]]);
+    addPoly([[W,base-80],[W,gyr],[rpx,fy],[lcx+lg+10,base+40]]);
+  } else {
+    addPoly([[0,base-60],[lpx,base-60],[lpx,fy],[0,gyl]]);
+    addPoly([[W,base-60],[W,gyr],[rpx,fy],[rpx,base-60]]);
   }
   lv.shield = [];
 
-  // --- upper flipper zone ---
-  const uy = base + 680, ulen = Math.max(58, 72 - n*1.5);
-  const ulx = W/2 - 85, urx = W/2 + 85;
-  lv.segs.push({x1:ulx-90,y1:uy+85,x2:ulx,y2:uy,t:4});
-  lv.segs.push({x1:urx+90,y1:uy+85,x2:urx,y2:uy,t:4});
+  // --- upper ("small") flipper zone: random center, height, size and guide shapes ---
+  const ulen = rnd(55,78) - Math.min(n,12);
+  const ug = rnd(22,32), ucx = rnd(200,400), uy = base + rnd(620,740);
+  const ulx = ucx - ug - ulen*COS, urx = ucx + ug + ulen*COS;
+  for (const [px,dir] of [[ulx,-1],[urx,1]]){
+    const reach = Math.min(rnd(55,110), dir<0 ? px-45 : W-45-px);
+    const gx = px + dir*reach, rise = rnd(50,100);
+    if (R()<0.5) addPoly([[px,uy],[gx,uy+rise],[gx,uy+rise-rnd(25,45)]]);           // slim wedge
+    else addPoly([[px,uy],[gx,uy+rise],[gx+dir*8,uy+rise-10],[px+dir*12,uy-18]]);   // blocky guide
+  }
   lv.flippers.push(makeFlipper(ulx,uy,ulen,1), makeFlipper(urx,uy,ulen,-1));
+  const upperTop = uy + 110;
 
   // --- random contents in two regions ---
   const occupied = [];
@@ -101,7 +121,8 @@ function getLevel(n){
     }
     return null;
   }
-  const regions = [[base+330, base+580], [base+820, base+1130]];
+  const rows = Math.min(3 + Math.floor(n/2), 6);
+  const regions = [[Math.max(base+330,fy+220), uy-70], [upperTop+30, base+1270-rows*25-60]];
   for (const [y0,y1] of regions){
     const nb = 2 + Math.floor(R()*2) + Math.floor(n/3);
     for(let i=0;i<Math.min(nb,6);i++){
@@ -116,9 +137,11 @@ function getLevel(n){
     const nw = 1 + Math.floor(R()*2);
     for(let i=0;i<nw;i++){
       const p = place(45,y0,y1); if(!p) continue;
-      const a = rnd(0,Math.PI), l = rnd(50,90);
+      const a = rnd(0,Math.PI), l = rnd(50,90), th = rnd(8,16);
       const kick = n>=6 && R()<0.5;
-      lv.segs.push({x1:p.x-Math.cos(a)*l/2,y1:p.y-Math.sin(a)*l/2,x2:p.x+Math.cos(a)*l/2,y2:p.y+Math.sin(a)*l/2,t:5,kick});
+      const ux=Math.cos(a)*l/2, uy2=Math.sin(a)*l/2, nx=-Math.sin(a)*th/2, ny=Math.cos(a)*th/2;
+      if (R()<0.5) addPoly([[p.x-ux-nx,p.y-uy2-ny],[p.x+ux-nx,p.y+uy2-ny],[p.x+ux+nx,p.y+uy2+ny],[p.x-ux+nx,p.y-uy2+ny]], kick);
+      else addPoly([[p.x-ux,p.y-uy2],[p.x+ux,p.y+uy2],[p.x+nx*3,p.y+ny*3]], kick);
     }
     // spinners
     if (n>=2 && R()<0.5+n*0.05){
@@ -139,7 +162,7 @@ function getLevel(n){
   for (const m of lv.moving) updateMover(m,0,true);
 
   // --- block band at top ---
-  const rows = Math.min(3 + Math.floor(n/2), 6), cols = 10, bw = W/cols;
+  const cols = 10, bw = W/cols;
   const top = base + 1270, bh = 22;
   for(let r=0;r<rows;r++) for(let c=0;c<cols;c++){
     let hp = 1 + Math.floor(R()*(1+n*0.5));
@@ -157,7 +180,7 @@ function getLevel(n){
 function buildShield(lv){
   const hp = 1 + Math.floor(lv.n/3), bw = 58;
   lv.shield = [];
-  for (let i=0;i<4;i++) lv.shield.push({x:W/2-2*bw+i*bw+2,y:lv.base+8,w:bw-4,h:16,hp,max:hp,shield:true});
+  for (let i=0;i<4;i++) lv.shield.push({x:lv.lower.cx-2*bw+i*bw+2,y:lv.base+8,w:bw-4,h:16,hp,max:hp,shield:true});
 }
 
 function makeFlipper(px,py,len,dir){
@@ -330,19 +353,28 @@ function draw(){
       ctx.beginPath(); ctx.arc(w.x,w.y,w.r*(0.3+0.2*Math.sin(time*3)),0,7); ctx.stroke(); ctx.setLineDash([]);
     }
     ctx.lineCap="round";
-    for (const s of lv.segs){
-      ctx.strokeStyle=s.kick?"#ff5":accent; ctx.lineWidth=s.t*2;
-      ctx.beginPath(); ctx.moveTo(s.x1,s.y1); ctx.lineTo(s.x2,s.y2); ctx.stroke();
+    ctx.lineJoin="round";
+    for (const pg of lv.polys){
+      ctx.beginPath(); ctx.moveTo(pg.pts[0][0],pg.pts[0][1]);
+      for (const q of pg.pts) ctx.lineTo(q[0],q[1]);
+      ctx.closePath();
+      ctx.fillStyle=pg.kick?"#6a5a10":`hsl(${lv.hue},55%,24%)`; ctx.fill();
+      ctx.strokeStyle=pg.kick?"#ff5":accent; ctx.lineWidth=3; ctx.stroke();
     }
     for (const m of lv.moving){
-      ctx.strokeStyle=m.type==="spin"?"#f6f":"#6f9"; ctx.lineWidth=m.t*2;
-      ctx.beginPath(); ctx.moveTo(m.x1,m.y1); ctx.lineTo(m.x2,m.y2); ctx.stroke();
+      const L=Math.hypot(m.x2-m.x1,m.y2-m.y1)||1, nx=-(m.y2-m.y1)/L*m.t, ny=(m.x2-m.x1)/L*m.t;
+      ctx.beginPath(); ctx.moveTo(m.x1+nx,m.y1+ny); ctx.lineTo(m.x2+nx,m.y2+ny); ctx.lineTo(m.x2-nx,m.y2-ny); ctx.lineTo(m.x1-nx,m.y1-ny); ctx.closePath();
+      ctx.fillStyle=m.type==="spin"?"#f6f":"#6f9"; ctx.fill(); ctx.strokeStyle="#fff"; ctx.lineWidth=1.5; ctx.stroke();
       if (m.type==="spin"){ ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(m.cx,m.cy,4,0,7); ctx.fill(); }
     }
     for (const f of lv.flippers){
-      ctx.strokeStyle="#fff"; ctx.lineWidth=14;
-      ctx.beginPath(); ctx.moveTo(f.px,f.py); ctx.lineTo(f.tx,f.ty); ctx.stroke();
-      ctx.strokeStyle=accent; ctx.lineWidth=8; ctx.stroke();
+      // tapered flipper body: round pivot end, narrower round tip
+      const ang=Math.atan2(f.ty-f.py,f.tx-f.px), r0=9, r1=5;
+      ctx.beginPath();
+      ctx.arc(f.px,f.py,r0,ang+Math.PI/2,ang-Math.PI/2);
+      ctx.arc(f.tx,f.ty,r1,ang-Math.PI/2,ang+Math.PI/2);
+      ctx.closePath();
+      ctx.fillStyle=accent; ctx.fill(); ctx.strokeStyle="#fff"; ctx.lineWidth=2.5; ctx.stroke();
     }
     for (const bu of lv.bumpers){
       ctx.fillStyle=bu.flash>0?"#fff":`hsl(${(lv.hue+180)%360},80%,${50+bu.flash*30}%)`;
@@ -416,27 +448,37 @@ function nudge(){
   ball.vx+=(Math.random()-.5)*250; ball.vy+=180; nudges++;
 }
 const LEFT_KEYS=new Set(["ArrowLeft","KeyZ","KeyA","ShiftLeft"]), RIGHT_KEYS=new Set(["ArrowRight","Slash","KeyM","KeyL","ShiftRight"]);
-const downKeys=new Set(), pointers=new Map();
+const downKeys=new Set(), touches=new Map();
+let mouseButtons=0; // bitmask straight from the browser: 1 = left button, 2 = right button
 function syncKeys(){
-  keys.left=keys.right=false;
+  keys.left=!!(mouseButtons&1); keys.right=!!(mouseButtons&2);
   for (const c of downKeys){ if (LEFT_KEYS.has(c)) keys.left=true; if (RIGHT_KEYS.has(c)) keys.right=true; }
-  for (const side of pointers.values()) keys[side]=true;
+  for (const side of touches.values()) keys[side]=true;
 }
-function releaseAll(){ downKeys.clear(); pointers.clear(); syncKeys(); }
+function releaseAll(){ downKeys.clear(); touches.clear(); mouseButtons=0; syncKeys(); }
 addEventListener("keydown",e=>{
   if (!started||over){ if(!e.repeat) start(); return; }
   if (e.code==="Space" && !e.repeat) nudge();
   downKeys.add(e.code); syncKeys();
   e.preventDefault();
 });
-addEventListener("keyup",e=>{ downKeys.delete(e.code); syncKeys(); });
+addEventListener("keyup",e=>{ downKeys.delete(e.code); syncKeys(); e.preventDefault(); });
 addEventListener("blur",releaseAll);
 document.addEventListener("visibilitychange",releaseAll);
 document.getElementById("overlay").addEventListener("pointerdown",e=>{e.stopPropagation(); start();});
-cv.addEventListener("pointerdown",e=>{ pointers.set(e.pointerId, e.clientX<innerWidth/2?"left":"right"); syncKeys(); e.preventDefault(); });
-for (const ev of ["pointerup","pointercancel","lostpointercapture"])
-  addEventListener(ev,e=>{ pointers.delete(e.pointerId); syncKeys(); });
+// Mouse: pressing a second button while one is held fires no new pointerdown (only pointermove),
+// so always re-read e.buttons rather than tracking downs/ups.
+function onPointer(e){
+  if (e.pointerType==="mouse"){ mouseButtons=e.buttons; syncKeys(); return; }
+  if (e.type==="pointerdown") touches.set(e.pointerId, e.clientX<innerWidth/2?"left":"right");
+  else if (e.type!=="pointermove") touches.delete(e.pointerId);
+  syncKeys();
+}
+cv.addEventListener("pointerdown",e=>{ onPointer(e); e.preventDefault(); });
+for (const ev of ["pointermove","pointerup","pointercancel"]) addEventListener(ev,onPointer);
+addEventListener("mousedown",e=>{ if(e.target===cv) e.preventDefault(); });
 cv.addEventListener("contextmenu",e=>e.preventDefault());
+cv.addEventListener("auxclick",e=>e.preventDefault());
 
 newGame(); started=false;
 requestAnimationFrame(frame);
