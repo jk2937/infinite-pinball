@@ -45,7 +45,7 @@ function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a
 const clamp=(v,a,b)=>v<a?a:v>b?b:v;
 
 // ---------- state ----------
-let seed, levels, ball, score, balls, maxLevel, time, best, banner, over, started, nudges, stillTime;
+let seed, levels, curLevel = 0, ball, score, balls, maxLevel, time, best, banner, over, started, nudges, stillTime;
 const keys = {left:false, right:false};
 try { best = +localStorage.getItem("ipb_best") || 0; } catch(e){ best = 0; }
 
@@ -58,8 +58,8 @@ function newGame(){
 }
 
 function spawnBall(){
-  const base = maxLevel*LH;
-  ball = {x:190, y:base+230, vx:0, vy:0, r:BR};
+  curLevel = 0;
+  ball = {x:190, y:230, vx:0, vy:0, r:BR};
 }
 
 // ---------- level generation ----------
@@ -73,15 +73,22 @@ function getLevel(n){
   // --- lower flipper zone ---
   const flen = Math.max(74, 96 - n*2);
   const lpx = W/2 - 120, rpx = W/2 + 120, fy = base + 110;
-  lv.segs.push({x1:0,y1:base+290,x2:lpx,y2:fy,t:4,oneWay:true});
-  lv.segs.push({x1:W,y1:base+290,x2:rpx,y2:fy,t:4,oneWay:true});
+  lv.segs.push({x1:0,y1:base+290,x2:lpx,y2:fy,t:4});
+  lv.segs.push({x1:W,y1:base+290,x2:rpx,y2:fy,t:4});
   lv.flippers.push(makeFlipper(lpx,fy,flen,1), makeFlipper(rpx,fy,flen,-1));
+  if (n>0){
+    // funnel from the level below: the only way in or out is the gap between the lower flippers
+    const mx = W/2 - 45;
+    lv.segs.push({x1:0,y1:base-80,x2:mx,y2:base+40,t:4},{x1:mx,y1:base+40,x2:lpx,y2:fy,t:4});
+    lv.segs.push({x1:W,y1:base-80,x2:W-mx,y2:base+40,t:4},{x1:W-mx,y1:base+40,x2:rpx,y2:fy,t:4});
+  }
+  lv.shield = [];
 
   // --- upper flipper zone ---
   const uy = base + 680, ulen = Math.max(58, 72 - n*1.5);
   const ulx = W/2 - 85, urx = W/2 + 85;
-  lv.segs.push({x1:ulx-90,y1:uy+85,x2:ulx,y2:uy,t:4,oneWay:true});
-  lv.segs.push({x1:urx+90,y1:uy+85,x2:urx,y2:uy,t:4,oneWay:true});
+  lv.segs.push({x1:ulx-90,y1:uy+85,x2:ulx,y2:uy,t:4});
+  lv.segs.push({x1:urx+90,y1:uy+85,x2:urx,y2:uy,t:4});
   lv.flippers.push(makeFlipper(ulx,uy,ulen,1), makeFlipper(urx,uy,ulen,-1));
 
   // --- random contents in two regions ---
@@ -133,7 +140,7 @@ function getLevel(n){
 
   // --- block band at top ---
   const rows = Math.min(3 + Math.floor(n/2), 6), cols = 10, bw = W/cols;
-  const top = base + 1310, bh = 22;
+  const top = base + 1270, bh = 22;
   for(let r=0;r<rows;r++) for(let c=0;c<cols;c++){
     let hp = 1 + Math.floor(R()*(1+n*0.5));
     if (n>=3 && R()<0.12) hp += 4;
@@ -144,6 +151,13 @@ function getLevel(n){
   lv.blockBottom = top - rows*(bh+3);
   levels[n] = lv;
   return lv;
+}
+
+// protective layer below a level's lower flippers, built the first time the level is reached
+function buildShield(lv){
+  const hp = 1 + Math.floor(lv.n/3), bw = 58;
+  lv.shield = [];
+  for (let i=0;i<4;i++) lv.shield.push({x:W/2-2*bw+i*bw+2,y:lv.base+8,w:bw-4,h:16,hp,max:hp,shield:true});
 }
 
 function makeFlipper(px,py,len,dir){
@@ -166,16 +180,12 @@ function updateMover(m, dt, init){
 }
 
 // ---------- physics ----------
-function collideSeg(b,x1,y1,x2,y2,thick,e,v1x,v1y,v2x,v2y,oneWay){
+function collideSeg(b,x1,y1,x2,y2,thick,e,v1x,v1y,v2x,v2y){
   const dx=x2-x1, dy=y2-y1, L2=dx*dx+dy*dy || 1;
   const t=clamp(((b.x-x1)*dx+(b.y-y1)*dy)/L2,0,1);
   const cx=x1+dx*t, cy=y1+dy*t;
   let nx=b.x-cx, ny=b.y-cy; const d=Math.hypot(nx,ny), R=b.r+thick;
   if (d>=R || d===0) return null;
-  if (oneWay){
-    let ux=-dy, uy=dx; if (uy<0){ux=-ux;uy=-uy;}
-    if ((b.x-x1)*ux+(b.y-y1)*uy < 0) return null; // ball is below: pass through
-  }
   nx/=d; ny/=d;
   const svx=v1x+(v2x-v1x)*t, svy=v1y+(v2y-v1y)*t;
   b.x=cx+nx*R; b.y=cy+ny*R;
@@ -222,14 +232,14 @@ function step(dt){
 
   for (const lv of near){
     for (const s of lv.segs){
-      const h = collideSeg(b,s.x1,s.y1,s.x2,s.y2,s.t,s.kick?0.2:0.45,0,0,0,0,s.oneWay);
+      const h = collideSeg(b,s.x1,s.y1,s.x2,s.y2,s.t,s.kick?0.2:0.45,0,0,0,0);
       if (h && s.kick && h.vn<-100){ b.vx+=h.nx*700; b.vy+=h.ny*700; score+=10; }
     }
     for (const m of lv.moving){
       collideSeg(b,m.x1,m.y1,m.x2,m.y2,m.t,0.5,(m.x1-m.px1)/dt,(m.y1-m.py1)/dt,(m.x2-m.px2)/dt,(m.y2-m.py2)/dt,false);
     }
     for (const f of lv.flippers){
-      collideSeg(b,f.px,f.py,f.tx,f.ty,7,0.25,0,0,(f.tx-f.ptx)/dt,(f.ty-f.pty)/dt,true);
+      collideSeg(b,f.px,f.py,f.tx,f.ty,7,0.25,0,0,(f.tx-f.ptx)/dt,(f.ty-f.pty)/dt);
     }
     for (const bu of lv.bumpers){
       const dx=b.x-bu.x, dy=b.y-bu.y, d=Math.hypot(dx,dy), R=b.r+bu.r;
@@ -241,8 +251,8 @@ function step(dt){
         bu.flash=1; score+=100*(lv.n+1);
       }
     }
-    for (let i=lv.blocks.length-1;i>=0;i--){
-      const bl=lv.blocks[i];
+    for (const list of [lv.blocks, lv.shield]) for (let i=list.length-1;i>=0;i--){
+      const bl=list[i];
       const cx=clamp(b.x,bl.x,bl.x+bl.w), cy=clamp(b.y,bl.y,bl.y+bl.h);
       let nx=b.x-cx, ny=b.y-cy, d=Math.hypot(nx,ny);
       if (d<b.r){
@@ -251,25 +261,26 @@ function step(dt){
         const vn=b.vx*nx+b.vy*ny;
         if (vn<0){ b.vx-=1.9*vn*nx; b.vy-=1.9*vn*ny; }
         bl.hp--; score+=50*(lv.n+1);
-        if (bl.hp<=0) lv.blocks.splice(i,1);
+        if (bl.hp<=0) list.splice(i,1);
       }
     }
   }
 
   // progress
-  const reached = Math.floor((b.y-150)/LH);
+  const inLv = Math.max(0, Math.floor((b.y-150)/LH));
+  curLevel = inLv;
+  const reached = inLv;
   if (reached>maxLevel){
+    buildShield(getLevel(reached)); // built once per level, never rebuilt
     maxLevel=reached; balls++; score+=1000*maxLevel;
     banner={text:"LEVEL "+(maxLevel+1), sub:(NEW_ELEMENTS[maxLevel]?"New: "+NEW_ELEMENTS[maxLevel]+"!  ":"")+"+1 ball", t:3};
-    levels.forEach((l,i)=>{ if(i<maxLevel-2) levels[i]=null; }); // free old levels (unreachable)
-    levels.length = Math.max(levels.length, maxLevel);
   }
   // stuck detection
   if (Math.hypot(b.vx,b.vy)<15) stillTime+=dt; else stillTime=0;
   if (stillTime>3){ b.vy+=500; b.vx+=(Math.random()-.5)*300; stillTime=0; }
 
   // drain
-  if (b.y < maxLevel*LH - 40){
+  if (b.y < -40){
     balls--;
     if (balls<=0) return gameOver();
     banner={text:"BALL LOST", sub:balls+" left", t:1.5};
@@ -338,10 +349,10 @@ function draw(){
       ctx.beginPath(); ctx.arc(bu.x,bu.y,bu.r+bu.flash*4,0,7); ctx.fill();
       ctx.strokeStyle="#fff"; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(bu.x,bu.y,bu.r*0.55,0,7); ctx.stroke();
     }
-    for (const bl of lv.blocks){
-      const armored=bl.max>4;
+    for (const bl of lv.blocks.concat(lv.shield)){
+      const armored=bl.max>4 && !bl.shield;
       const l=armored?30+bl.hp/bl.max*20:45+bl.hp/bl.max*20;
-      ctx.fillStyle=armored?`hsl(210,15%,${l}%)`:`hsl(${(lv.hue+bl.max*30)%360},80%,${l}%)`;
+      ctx.fillStyle=bl.shield?`hsla(190,90%,${l}%,.85)`:armored?`hsl(210,15%,${l}%)`:`hsl(${(lv.hue+bl.max*30)%360},80%,${l}%)`;
       ctx.fillRect(bl.x,bl.y,bl.w,bl.h);
       if (bl.hp>1){ ctx.save(); ctx.scale(1,-1); ctx.fillStyle="#000a"; ctx.font="bold 14px sans-serif";
         ctx.textAlign="center"; ctx.fillText(bl.hp,bl.x+bl.w/2,-bl.y-6); ctx.restore(); }
@@ -352,7 +363,7 @@ function draw(){
   }
   // drain line
   ctx.strokeStyle="rgba(255,60,60,.5)"; ctx.lineWidth=2; ctx.setLineDash([10,8]);
-  ctx.beginPath(); ctx.moveTo(0,maxLevel*LH-40); ctx.lineTo(W,maxLevel*LH-40); ctx.stroke(); ctx.setLineDash([]);
+  ctx.beginPath(); ctx.moveTo(0,-40); ctx.lineTo(W,-40); ctx.stroke(); ctx.setLineDash([]);
   // ball
   const g=ctx.createRadialGradient(ball.x-3,ball.y+3,1,ball.x,ball.y,ball.r);
   g.addColorStop(0,"#fff"); g.addColorStop(1,"#99a");
@@ -365,7 +376,7 @@ function draw(){
   const fs=Math.max(14,Math.min(22,cw/40));
   ctx.font=`bold ${fs}px system-ui,sans-serif`; ctx.fillStyle="#eef"; ctx.textAlign="left";
   ctx.fillText(`SCORE ${score.toLocaleString()}`,10,fs+6);
-  ctx.fillText(`LEVEL ${maxLevel+1}   BALLS ${balls}`,10,fs*2+12);
+  ctx.fillText(`LEVEL ${curLevel+1}/${maxLevel+1}   BALLS ${balls}`,10,fs*2+12);
   ctx.textAlign="right"; ctx.fillStyle="#aab";
   ctx.fillText(`BEST ${best.toLocaleString()}`,cw-10,fs+6);
   ctx.fillText(`WORLD #${seed}`,cw-10,fs*2+12);
@@ -388,7 +399,7 @@ function frame(now){
     if (banner) banner.t-=dt;
   }
   // camera: follow ball, keep look-ahead upward, never below the drain
-  const target=Math.max(ball.y+120, maxLevel*LH-40+ch/scale/2*0.9);
+  const target=Math.max(ball.y+120, -40+ch/scale/2*0.9);
   camY+=(target-camY)*Math.min(1,dt*6);
   draw();
   requestAnimationFrame(frame);
@@ -404,29 +415,28 @@ function nudge(){
   if (!started||over) return;
   ball.vx+=(Math.random()-.5)*250; ball.vy+=180; nudges++;
 }
-addEventListener("keydown",e=>{
-  if (e.repeat) return;
-  if (!started||over){ start(); return; }
-  if (e.key==="ArrowLeft"||e.key==="z"||e.key==="Z"||e.key==="Shift"&&e.location===1) keys.left=true;
-  if (e.key==="ArrowRight"||e.key==="/"||e.key==="m"||e.key==="M"||e.key==="Shift"&&e.location===2) keys.right=true;
-  if (e.key===" ") nudge();
-  e.preventDefault();
-});
-addEventListener("keyup",e=>{
-  if (e.key==="ArrowLeft"||e.key==="z"||e.key==="Z"||e.key==="Shift"&&e.location===1) keys.left=false;
-  if (e.key==="ArrowRight"||e.key==="/"||e.key==="m"||e.key==="M"||e.key==="Shift"&&e.location===2) keys.right=false;
-});
-document.getElementById("overlay").addEventListener("pointerdown",e=>{e.stopPropagation(); start();});
-function touches(e){
+const LEFT_KEYS=new Set(["ArrowLeft","KeyZ","KeyA","ShiftLeft"]), RIGHT_KEYS=new Set(["ArrowRight","Slash","KeyM","KeyL","ShiftRight"]);
+const downKeys=new Set(), pointers=new Map();
+function syncKeys(){
   keys.left=keys.right=false;
-  for (const t of e.touches){ if (t.clientX<innerWidth/2) keys.left=true; else keys.right=true; }
-  e.preventDefault();
+  for (const c of downKeys){ if (LEFT_KEYS.has(c)) keys.left=true; if (RIGHT_KEYS.has(c)) keys.right=true; }
+  for (const side of pointers.values()) keys[side]=true;
 }
-cv.addEventListener("touchstart",touches,{passive:false});
-cv.addEventListener("touchend",touches,{passive:false});
-cv.addEventListener("touchcancel",touches,{passive:false});
-cv.addEventListener("mousedown",e=>{ if(e.clientX<innerWidth/2) keys.left=true; else keys.right=true; });
-addEventListener("mouseup",()=>{ keys.left=keys.right=false; });
+function releaseAll(){ downKeys.clear(); pointers.clear(); syncKeys(); }
+addEventListener("keydown",e=>{
+  if (!started||over){ if(!e.repeat) start(); return; }
+  if (e.code==="Space" && !e.repeat) nudge();
+  downKeys.add(e.code); syncKeys();
+  e.preventDefault();
+});
+addEventListener("keyup",e=>{ downKeys.delete(e.code); syncKeys(); });
+addEventListener("blur",releaseAll);
+document.addEventListener("visibilitychange",releaseAll);
+document.getElementById("overlay").addEventListener("pointerdown",e=>{e.stopPropagation(); start();});
+cv.addEventListener("pointerdown",e=>{ pointers.set(e.pointerId, e.clientX<innerWidth/2?"left":"right"); syncKeys(); e.preventDefault(); });
+for (const ev of ["pointerup","pointercancel","lostpointercapture"])
+  addEventListener(ev,e=>{ pointers.delete(e.pointerId); syncKeys(); });
+cv.addEventListener("contextmenu",e=>e.preventDefault());
 
 newGame(); started=false;
 requestAnimationFrame(frame);
