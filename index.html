@@ -259,14 +259,13 @@ function step(dt){
     }
   }
 
-  // progress: first ball into a new level earns an extra ball in play there
+  // progress
   for (const b of live.slice()){
     const reached = Math.max(0, Math.floor((b.y-150)/LH));
     if (reached>maxLevel){
       buildShield(getLevel(reached)); // built once per level, never rebuilt
       maxLevel=reached; score+=1000*maxLevel;
-      live.push(newBall(reached));
-      banner={text:"LEVEL "+(maxLevel+1), sub:(NEW_ELEMENTS[maxLevel]?"New: "+NEW_ELEMENTS[maxLevel]+"!  ":"")+"MULTIBALL +1", t:3};
+      banner={text:"LEVEL "+(maxLevel+1), sub:(NEW_ELEMENTS[maxLevel]?"New: "+NEW_ELEMENTS[maxLevel]+"!":"")+"", t:3};
     }
   }
 

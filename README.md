@@ -6,8 +6,7 @@ A browser pinball game with no end, served as one static page (it works on GitHu
 - Each level is a full table with a **lower** and an **upper** flipper zone.
 - Levels are stacked in one continuous table. To reach the next level, break through the **block wall** at the top of the current one. A funnel then guides the ball up between the next level's lower flippers. There are no loading screens.
 - Higher levels get harder: gravity rises, flippers get shorter, blocks get tougher, and new elements appear. Those are moving bumpers, spinners, gravity wells, armored blocks, sliding gates, repulsors and kicker walls.
-- Reaching a new level puts an **extra ball in play** (multiball) and builds a thin **protective layer** of blocks under that level's flippers. The layer is built only once per level. After that, whatever is left of it is the barrier back down. Protective blocks bounce a falling ball back up into the level.
-- You only lose a run when your last ball in play drains.
+- Reaching a new level builds a thin **protective layer** of blocks under that level's flippers. The layer is built only once per level. After that, whatever is left of it is the barrier back down. Protective blocks bounce a falling ball back up into the level.
 - You can fall back to lower levels. You only lose a ball through the drain on level 1.
 
 ## Controls
