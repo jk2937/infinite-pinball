@@ -83,15 +83,15 @@ function getLevel(n){
 
   // --- lower ("big") flipper zone: random center, gap, length and height ---
   const flen = rnd(80,108) - Math.min(n*1.5,18);
-  const lcx = rnd(240,360), lg = rnd(32,42), fy = base + rnd(95,130);
+  const lcx = n===0 ? W/2 : rnd(240,360), lg = n===0 ? rnd(32,42) : rnd(40,48), fy = base + rnd(95,130);
   const lpx = lcx - lg - flen*COS, rpx = lcx + lg + flen*COS;
   const gyl = base + rnd(230,320), gyr = base + rnd(230,320);
   lv.lower = {cx:lcx, lpx, fy};
   lv.flippers.push(makeFlipper(lpx,fy,flen,1), makeFlipper(rpx,fy,flen,-1));
   if (n>0){
     // funnel from the level below: the only way in or out is the gap between the lower flippers
-    addPoly([[0,base-80],[lcx-lg-10,base+40],[lpx,fy],[0,gyl]]);
-    addPoly([[W,base-80],[W,gyr],[rpx,fy],[lcx+lg+10,base+40]]);
+    addPoly([[0,base-175],[lcx-lg-6,base+30],[lpx,fy],[0,gyl]]);
+    addPoly([[W,base-175],[W,gyr],[rpx,fy],[lcx+lg+6,base+30]]);
   } else {
     addPoly([[0,base-60],[lpx,base-60],[lpx,fy],[0,gyl]]);
     addPoly([[W,base-60],[W,gyr],[rpx,fy],[rpx,base-60]]);
@@ -103,8 +103,8 @@ function getLevel(n){
   const ug = rnd(22,32), ucx = rnd(200,400), uy = base + rnd(620,740);
   const ulx = ucx - ug - ulen*COS, urx = ucx + ug + ulen*COS;
   for (const [px,dir] of [[ulx,-1],[urx,1]]){
-    const reach = Math.min(rnd(55,110), dir<0 ? px-45 : W-45-px);
-    const gx = px + dir*reach, rise = rnd(50,100);
+    const reach = Math.min(rnd(35,65), dir<0 ? px-70 : W-70-px);
+    const gx = px + dir*reach, rise = rnd(35,65);
     if (R()<0.5) addPoly([[px,uy],[gx,uy+rise],[gx,uy+rise-rnd(25,45)]]);           // slim wedge
     else addPoly([[px,uy],[gx,uy+rise],[gx+dir*8,uy+rise-10],[px+dir*12,uy-18]]);   // blocky guide
   }
@@ -121,8 +121,8 @@ function getLevel(n){
     }
     return null;
   }
-  const rows = Math.min(3 + Math.floor(n/2), 6);
-  const regions = [[Math.max(base+330,fy+220), uy-70], [upperTop+30, base+1270-rows*25-60]];
+  const rows = n===0 ? 2 : Math.min(3 + Math.floor(n/2), 6);
+  const regions = [[Math.max(base+330,fy+220), uy-70], [upperTop+30, base+1200-rows*25-60]];
   for (const [y0,y1] of regions){
     const nb = 2 + Math.floor(R()*2) + Math.floor(n/3);
     for(let i=0;i<Math.min(nb,6);i++){
@@ -163,9 +163,9 @@ function getLevel(n){
 
   // --- block band at top ---
   const cols = 10, bw = W/cols;
-  const top = base + 1270, bh = 22;
+  const top = base + 1200, bh = 22;
   for(let r=0;r<rows;r++) for(let c=0;c<cols;c++){
-    let hp = 1 + Math.floor(R()*(1+n*0.5));
+    let hp = n===0 ? 1 : 1 + Math.floor(R()*(1+n*0.5));
     if (n>=3 && R()<0.12) hp += 4;
     if (n>=8 && R()<0.08) hp += 8;
     hp = Math.min(hp, 16);
@@ -178,9 +178,10 @@ function getLevel(n){
 
 // protective layer below a level's lower flippers, built the first time the level is reached
 function buildShield(lv){
-  const hp = 1 + Math.floor(lv.n/3), bw = 58;
+  const easy = lv.n===1, hp = easy ? 4 : 1 + Math.floor(lv.n/3), bw = 58, cnt = easy ? 6 : 4;
   lv.shield = [];
-  for (let i=0;i<4;i++) lv.shield.push({x:lv.lower.cx-2*bw+i*bw+2,y:lv.base+8,w:bw-4,h:16,hp,max:hp,shield:true});
+  for (let r=0;r<(easy?2:1);r++)
+  for (let i=0;i<cnt;i++) lv.shield.push({x:lv.lower.cx-cnt/2*bw+i*bw+2,y:lv.base+8-r*19,w:bw-4,h:16,hp,max:hp,shield:true});
 }
 
 function makeFlipper(px,py,len,dir){
